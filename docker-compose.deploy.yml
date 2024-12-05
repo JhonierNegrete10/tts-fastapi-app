@@ -1,0 +1,35 @@
+# deploy version of docker-compose.ymls are used for production deployments.
+services:
+  tts-app:
+    build: 
+      context: ./backend
+      dockerfile: deploy.Dockerfile
+    env_file:
+      - ./backend/deploy.env
+    ports:
+      - "8989:8989"
+    environment:
+      - PYTHONUNBUFFERED=1
+    # networks:
+    #   tts_network:
+    #     ipv4_address: 172.19.0.10
+  
+  streamlit-app:
+    build: 
+      context: /streamlit_app
+    env_file:
+      - ./streamlit_app/deploy.env
+    ports:
+      - "5555:8501"
+    environment:
+      - PYTHONUNBUFFERED=1
+    # networks:
+    #   tts_network:
+    #     ipv4_address: 172.19.0.11
+
+# networks:
+#   tts_network:
+#     driver: bridge
+#     ipam:
+#       config:
+#         - subnet: 172.19.0.0/24

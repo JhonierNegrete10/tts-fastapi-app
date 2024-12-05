@@ -1,0 +1,35 @@
+# BACKEND
+fastapi[all]
+sqlmodel
+uvicorn
+python-dotenv
+pydantic-settings
+python-multipart
+# Turso 
+sqlalchemy-libsql
+# libsql-experimental
+
+numpy
+pandas
+matplotlib
+requests
+
+
+# scipy
+# transformers
+
+
+# streamlit
+# jupyterlab
+# notebook
+# ipykernel
+# ipywidgets
+
+
+# AWS 
+boto3
+# aws lambda
+# mangum
+
+pydub
+# ffmpeg

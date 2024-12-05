@@ -1,0 +1,36 @@
+# TTS
+fastapi[all]
+sqlmodel
+uvicorn
+# torch
+
+
+scipy
+python-multipart
+
+transformers
+streamlit
+
+
+# jupyterlab
+# notebook
+# ipykernel
+# ipywidgets
+
+numpy
+pandas
+matplotlib
+requests
+
+# Turso 
+# libsql-experimental
+sqlalchemy-libsql
+
+# # aws lambda
+# mangum
+# boto3
+
+pydub
+python-dotenv
+pydantic-settings
+# ffmpeg
