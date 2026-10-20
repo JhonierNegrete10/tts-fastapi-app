@@ -29,10 +29,12 @@ from transformers import (
     set_seed,
 )
 import logging
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 set_seed(555)  # make deterministic
+
 
 class TTSLocalModel:
     def __init__(self):
@@ -42,22 +44,36 @@ class TTSLocalModel:
         )
 
     def _is_gpu(self):
-        return not torch.cuda.is_available()
+        return torch.cuda.is_available()
 
     def _get_device(self):
         return torch.device("cuda:0" if self._is_gpu() else "cpu")
 
-    def sintetic_voice(self, text: str):
+    def _sintetic_voice(self, text: str):
+        print(f"Sintetic voice: {self._is_gpu()}")
         # Encode text to tensor
-        inputs = self.tokenizer(text, return_tensors="pt")
+        try:
+            inputs = self.tokenizer(text, return_tensors="pt")
+            # print(f"Inputs: {inputs}")
+        except Exception as e:
+            logger.error(f" self.tokenizer() Failed to generate synthetic voice: {e}")
+            raise
         # Generate waveform
-        with torch.no_grad():
-            waveform = self.model(**inputs.to(self._get_device()))
-        return waveform
+        try:
+            with torch.no_grad():
+                outputs = self.model(**inputs.to(self._get_device()))
+            return outputs
+        except Exception as e:
+            logger.error(f"torch.no_grad() Failed to generate synthetic voice: {e}")
+            raise
 
-    def save_waveform(self, waveform, output_path: str):
+    def save_waveform(self, outputs, output_path: str):
         # Save waveform to file
-        waveform = waveform.cpu().numpy()
+        if not self._is_gpu():
+            waveform = outputs.waveform.cpu().numpy()
+        else:
+            waveform = outputs.waveform[0].cpu().numpy()
+        # print(f"Waveform: {waveform}")
         try:
             scipy.io.wavfile.write(
                 output_path,
@@ -69,3 +85,7 @@ class TTSLocalModel:
             logger.error(f"Failed to save waveform: {e}")
             raise
 
+    def synthetic_voice(self, text: str, output_path: str = "output.wav"):
+        waveform = self._sintetic_voice(text)
+        self.save_waveform(waveform, output_path)
+        return output_path

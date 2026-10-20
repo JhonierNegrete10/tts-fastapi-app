@@ -1,22 +1,16 @@
+import uuid
 from typing import Optional, List
 from sqlmodel import Session, select
-from models import SpeechRecord
+from models import SpeechRecord # Adjusted import
 
-
-class CRUDBase:
-    def __init__(self, model):
-        self.model: SpeechRecord = model
-
-
-class CRUDSpeechRecord(CRUDBase):
-    def __init__(self):
-        super().__init__(SpeechRecord)
-
+class SpeechRepository:
     def create(
-        self, db: Session, *, record_id: str, text: str, audio_file: str
+        self, db: Session, *, text: str, audio_file_name: str
     ) -> SpeechRecord:
-        """Create a new speech record."""
-        db_record = SpeechRecord(id=record_id, text=text, audio_file=audio_file)
+        """Create a new speech record with a unique ID."""
+        record_id = str(uuid.uuid4())
+        # audio_file_name should be just the name of the file, e.g., <uuid>.wav
+        db_record = SpeechRecord(id=record_id, text=text, audio_file=audio_file_name)
         db.add(db_record)
         db.commit()
         db.refresh(db_record)
@@ -24,17 +18,17 @@ class CRUDSpeechRecord(CRUDBase):
 
     def get_by_id(self, db: Session, record_id: str) -> Optional[SpeechRecord]:
         """Get a speech record by ID."""
-        return db.get(self.model, record_id)
+        return db.get(SpeechRecord, record_id)
 
     def get_multi(
         self, db: Session, *, skip: int = 0, limit: int = 100
     ) -> List[SpeechRecord]:
         """Get multiple speech records with pagination."""
         return db.exec(
-            select(self.model)
+            select(SpeechRecord)
             .offset(skip)
             .limit(limit)
-            .order_by(self.model.created_at.desc())
+            .order_by(SpeechRecord.created_at.desc())
         ).all()
 
     def get_by_text_search(
@@ -42,16 +36,16 @@ class CRUDSpeechRecord(CRUDBase):
     ) -> List[SpeechRecord]:
         """Search speech records by text content."""
         return db.exec(
-            select(self.model)
-            .where(self.model.text.contains(search_text))
+            select(SpeechRecord)
+            .where(SpeechRecord.text.contains(search_text))
             .offset(skip)
             .limit(limit)
-            .order_by(self.model.created_at.desc())
+            .order_by(SpeechRecord.created_at.desc())
         ).all()
 
     def delete(self, db: Session, *, record_id: str) -> Optional[SpeechRecord]:
         """Delete a speech record."""
-        record: SpeechRecord = db.get(self.model, record_id)
+        record: Optional[SpeechRecord] = db.get(SpeechRecord, record_id)
         if record:
             db.delete(record)
             db.commit()
@@ -61,14 +55,10 @@ class CRUDSpeechRecord(CRUDBase):
         self, db: Session, *, record_id: str, new_text: str
     ) -> Optional[SpeechRecord]:
         """Update the text of a speech record."""
-        record: SpeechRecord = db.get(self.model, record_id)
+        record: Optional[SpeechRecord] = db.get(SpeechRecord, record_id)
         if record:
             record.text = new_text
             db.add(record)
             db.commit()
             db.refresh(record)
-        return record
-
-
-# Create a CRUD instance
-speech_records = CRUDSpeechRecord()
+        return record 

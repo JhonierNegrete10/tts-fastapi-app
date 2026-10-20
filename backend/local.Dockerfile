@@ -28,7 +28,7 @@ RUN apt-get install -y \
 RUN pip install --upgrade pip
 
 # Install the pytorch dependencies
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # Copy the requirements file into the container
 COPY requirements.txt .

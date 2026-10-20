@@ -1,134 +1,124 @@
-from fastapi import FastAPI, Depends, HTTPException
-import os
+from fastapi import FastAPI, Depends
 import uvicorn
-from models import TextInput, SpeechRecord
-from database import get_session, create_db_and_tables
-from sqlmodel import Session
-from crud import speech_records
-from tts_model import tts_model
 import logging
-import boto3
-from fastapi.responses import StreamingResponse
-from botocore.exceptions import ClientError
+import os
+from database import create_db_and_tables
+from tts_model.local_model import TTSLocalModel
+from repositories.speech_repository import SpeechRepository
+from services.speech_service import SpeechService
+from api.endpoints import speech as speech_router
+
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
-logger = logging.getLogger("uvicorn.info")
+# Set a basic config if not already set by uvicorn or other means
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger("uvicorn.info")  # Standard uvicorn logger
 
-app = FastAPI()
-s3_client = boto3.client(
-    "s3",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+app = FastAPI(
+    title="Text-to-Speech API",
+    description="API for synthesizing speech from text and managing audio records.",
+    version="1.0.0",
+    openapi_url="/api/v1/openapi.json",  # OpenAPI schema path
+)
 
+# --- Dependency Management ---
+# These instances are created once when the application starts up and shared across requests.
+
+# Initialize TTS Model
+# If TTSLocalModel has heavy initialization, consider doing it within on_startup
+# or ensure it's lightweight enough for global scope instantiation.
+tts_model_instance = TTSLocalModel()
+
+# Initialize Repository
+speech_repository_instance = SpeechRepository()
+
+# Initialize Service with its dependencies
+speech_service_instance = SpeechService(
+    tts_model=tts_model_instance, speech_repo=speech_repository_instance
 )
 
 
+# Dependency provider function for SpeechService
+# FastAPI will call this function to inject the shared service instance into path operation functions
+# that depend on `get_speech_service` (as defined in the router module).
+def get_speech_service_dependency() -> SpeechService:
+    return speech_service_instance
+
+
+# --- Event Handlers ---
 @app.on_event("startup")
 def on_startup():
-    create_db_and_tables()
-
-
-@app.post("/synthesize/", response_model=SpeechRecord)
-async def synthesize_speech(
-    text_input: TextInput, session: Session = Depends(get_session)
-):
-    # Generate audio
-    try:
-        audio_s3_url = tts_model.synthetic_voice(text_input.text)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"error intentando sintetizar {str(e)}"
-        )
-        # audio_s3_url:: "https://{S3_BUCKET}.s3.amazonaws.com/{s3_full_path}"
-        # get the filename from the url
-    audio_id = audio_s3_url.split("/")[-1]
-
-    # Create database record using CRUD
-    try:
-        db_record = speech_records.create(
-            db=session,
-            record_id=audio_id,
-            text=text_input.text,
-            audio_file=audio_s3_url,
-        )
-
-        return db_record
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"error intentando guardar en db {str(e)}"
-        )
-
-
-@app.get("/audio/{record_id}")
-async def get_audio(record_id: str, session: Session = Depends(get_session)):
-    record = speech_records.get_by_id(db=session, record_id=record_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    try:
-        # Get S3 URL from your database
-        s3_url = record.audio_file  # Your database query here
-
-        # Parse bucket and key from S3 URL
-        bucket_name = s3_url.split("/")[2].split(".")[0]
-        key = "/".join(s3_url.split("/")[3:])
-
-        # Get object from S3
-        file_obj = s3_client.get_object(Bucket=bucket_name, Key=key)
-
-        # Return streaming response
-        return StreamingResponse(
-            file_obj["Body"].iter_chunks(),
-            media_type="audio/wav",  # Adjust content type as needed
-            headers={"Content-Disposition": f'attachment; filename="{key}"'},
-        )
-    except ClientError as e:
-        raise HTTPException(status_code=404, detail=f"Audio file not found {e}")
-
-
-@app.get("/records/", response_model=list[SpeechRecord])
-async def get_records(
-    skip: int = 0,
-    limit: int = 100,
-    search: str = None,
-    session: Session = Depends(get_session),
-):
-    if search:
-        records = speech_records.get_by_text_search(
-            db=session, search_text=search, skip=skip, limit=limit
-        )
-    else:
-        records = speech_records.get_multi(db=session, skip=skip, limit=limit)
-    return records
-
-
-@app.delete("/records/{record_id}", response_model=SpeechRecord)
-async def delete_record(record_id: str, session: Session = Depends(get_session)):
-    record = speech_records.delete(db=session, record_id=record_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-
-    # Delete associated audio file
-    audio_path = f"/audio_output/{record.audio_file}"
-    if os.path.exists(audio_path):
-        os.remove(audio_path)
-
-    return record
-
-
-@app.put("/records/{record_id}", response_model=SpeechRecord)
-async def update_record(
-    record_id: str, text_input: TextInput, session: Session = Depends(get_session)
-):
-    record = speech_records.update_text(
-        db=session, record_id=record_id, new_text=text_input.text
+    logger.info(
+        "Application startup: Creating database and tables if they don't exist."
     )
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
+    create_db_and_tables()
+    # Example: Ensure output directory from config exists (if not handled by service init)
+    # from core.config import AUDIO_OUTPUT_DIR
+    # if not os.path.exists(AUDIO_OUTPUT_DIR):
+    #     os.makedirs(AUDIO_OUTPUT_DIR)
+    #     logger.info(f"Audio output directory ensured: {AUDIO_OUTPUT_DIR}")
+    logger.info("Startup complete.")
 
-    return record
+
+@app.on_event("shutdown")
+def on_shutdown():
+    logger.info("Application shutdown.")
+    # Add any cleanup logic here if necessary (e.g., closing database connections if not managed automatically)
 
 
+# --- Include Routers ---
+# Mount the API endpoints from the speech router module.
+app.include_router(
+    speech_router.router,  # The APIRouter instance from api.endpoints.speech
+    prefix="/api/v1",  # All routes in this router will be prefixed with /api/v1
+    tags=["Speech Synthesis"],  # Tag for grouping endpoints in OpenAPI documentation
+)
+
+# Override the dependency for `get_speech_service` used in the router.
+# This tells FastAPI: whenever a path operation depends on `speech_router.get_speech_service`,
+# actually provide the instance returned by `get_speech_service_dependency` (our singleton).
+app.dependency_overrides[speech_router.get_speech_service] = (
+    get_speech_service_dependency
+)
+
+
+# --- Health Check Endpoint (Recommended) ---
+@app.get("/health", tags=["Utilities"])
+async def health_check():
+    """
+    Simple health check endpoint.
+    """
+    return {"status": "healthy", "message": "Application is running smoothly."}
+
+
+# --- Main Execution Block (for running with `python main.py`) ---
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8989, reload=True, reload_delay=2)
+    port = int(
+        os.environ.get("PORT", 8989)
+    )  # Allow port to be set by environment variable
+    reload_app = (
+        os.environ.get("RELOAD_APP", "True").lower() == "true"
+    )  # Control reload via env
+
+    # Uvicorn logging configuration (customize as needed)
+    log_config = uvicorn.config.LOGGING_CONFIG
+    log_config["formatters"]["access"]["fmt"] = (
+        '%(asctime)s %(levelname)s [%(name)s:%(lineno)d] [PID:%(process)d] - "%(request_line)s" %(status_code)s'
+    )
+    log_config["formatters"]["default"]["fmt"] = (
+        "%(asctime)s %(levelname)s [%(name)s:%(lineno)d] [PID:%(process)d] - %(message)s"
+    )
+    log_config["loggers"]["uvicorn"]["level"] = "INFO"
+    log_config["loggers"]["uvicorn.error"]["level"] = "INFO"
+    log_config["loggers"]["uvicorn.access"]["level"] = (
+        "INFO"  # Set to WARNING for less verbose access logs
+    )
+
+    uvicorn.run(
+        "main:app",  # Path to the FastAPI app object (filename:variable_name)
+        host="0.0.0.0",  # Listen on all available network interfaces
+        port=port,
+        reload=reload_app,  # Enable auto-reload for development
+        reload_delay=2,  # Delay before reloading
+        log_config=log_config,  # Apply the custom logging configuration
+    )

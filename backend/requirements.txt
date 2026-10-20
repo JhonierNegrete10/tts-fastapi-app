@@ -28,7 +28,7 @@ sqlalchemy-libsql
 
 # # aws lambda
 # mangum
-# boto3
+boto3
 
 pydub
 python-dotenv

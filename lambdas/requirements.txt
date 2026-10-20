@@ -1,0 +1,10 @@
+# TTS
+fastapi
+uvicorn
+python-dotenv
+python-multipart
+scipy
+# torch
+transformers
+mangum
+boto3
